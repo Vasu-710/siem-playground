@@ -1,0 +1,42 @@
+version: "3.8"
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: siem
+      POSTGRES_PASSWORD: siem_pass
+      POSTGRES_DB: siemdb
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  collector:
+    build: ./collectors/api_collector
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports: ["8000:8000"]
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgres://siem:siem_pass@db:5432/siemdb
+
+  pipeline:
+    image: python:3.11-slim
+    working_dir: /app
+    volumes:
+      - ./pipeline:/app
+    command: ["bash", "-c", "pip install -r requirements.txt && python correlator.py"]
+    depends_on:
+      - collector
+      - db
+
+  ui:
+    image: node:20
+    working_dir: /app
+    volumes:
+      - ./ui:/app
+    ports:
+      - "3000:3000"
+    command: ["bash", "-c", "cd /app && npm install && npm start"]
+
+volumes:
+  pgdata:

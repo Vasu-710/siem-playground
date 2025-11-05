@@ -1,0 +1,5 @@
+[
+  {"timestamp":"2025-11-01T12:00:00Z","source":"redteam","event_type":"email_sent","payload":{"campaign_id":"camp1","recipient":"test@local.test","domain":"malicious_domain.com"}},
+  {"timestamp":"2025-11-01T12:00:30Z","source":"redteam","event_type":"link_clicked","payload":{"campaign_id":"camp1","recipient":"test@local.test","ip":"1.2.3.4","domain":"malicious_domain.com"}},
+  {"timestamp":"2025-11-01T12:01:00Z","source":"redteam","event_type":"credential_submitted","payload":{"campaign_id":"camp1","recipient":"test@local.test","username":"alice","ip":"1.2.3.4"}}
+]
