@@ -1,0 +1,39 @@
+# macOS system files
+.DS_Store
+.Trashes
+.AppleDouble
+
+# IDE / editor files
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.env
+env/
+venv/
+.venv/
+pip-log.txt
+*.sqlite3
+*.log
+*.pot
+
+# Node / React
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# Docker
+*.env
+docker-compose.override.yml
+*.log
+tmp/
+logs/
