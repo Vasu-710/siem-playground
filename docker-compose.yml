@@ -11,32 +11,36 @@ services:
       - pgdata:/var/lib/postgresql/data
 
   collector:
-    build: ./collectors/api_collector
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.api
     ports: ["8000:8000"]
     depends_on:
       - db
     environment:
       DATABASE_URL: postgres://siem:siem_pass@db:5432/siemdb
+    volumes:
+      - /tmp:/tmp
 
   pipeline:
     image: python:3.11-slim
     working_dir: /app
     volumes:
       - ./pipeline:/app
+      - /tmp:/tmp
     command: ["bash", "-c", "pip install -r requirements.txt && python correlator.py"]
     depends_on:
       - collector
       - db
 
   ui:
-    image: node:20
-    working_dir: /app
-    volumes:
-      - ./ui:/app
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.ui
     ports:
       - "3000:3000"
-    command: ["bash", "-c", "cd /app && npm install && npm start"]
+    depends_on:
+      - collector
 
 volumes:
   pgdata:

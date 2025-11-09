@@ -1,5 +1,6 @@
 FROM python:3.11-slim
 WORKDIR /app
-COPY . .
-RUN pip install -r requirements.txt
-CMD ["python", "collectors/api_collector/app/main.py"]
+COPY collectors/api_collector/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY collectors/api_collector .
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
