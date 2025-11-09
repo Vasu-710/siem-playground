@@ -41,6 +41,8 @@ services:
       - "3000:3000"
     depends_on:
       - collector
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
 
 volumes:
   pgdata:

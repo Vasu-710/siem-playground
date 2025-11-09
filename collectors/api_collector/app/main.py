@@ -5,7 +5,7 @@ import os, requests, json
 
 app = FastAPI(title="SIEM Playground Collector")
 
-# Enable CORS for React dev server
+# Enable CORS for browser requests
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -40,12 +40,19 @@ async def get_alerts():
     if not os.path.exists(ALERTS_FILE):
         return []
 
-    with open(ALERTS_FILE, "r") as f:
-        alerts = [json.loads(line) for line in f if line.strip()]
-
-    return alerts
+    try:
+        with open(ALERTS_FILE, "r") as f:
+            alerts = [json.loads(line) for line in f if line.strip()]
+        return alerts
+    except Exception as e:
+        return []
 
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/")
+def root():
+    return {"message": "SIEM Playground Collector API", "endpoints": ["/ingest", "/api/alerts", "/health"]}
