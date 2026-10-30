@@ -1,339 +1,223 @@
-# 🛡️ SIEM Playground
+# SIEM Playground
 
 ![Python Tests](https://github.com/Vasu-710/siem-playground/actions/workflows/python-tests.yml/badge.svg)
-![UI Workflow](https://github.com/Vasu-710/siem-playground/actions/workflows/ui-workflow.yml/badge.svg)
+![UI Lint & Test](https://github.com/Vasu-710/siem-playground/actions/workflows/ui-workflow.yml/badge.svg)
 [![codecov](https://codecov.io/gh/Vasu-710/siem-playground/branch/main/graph/badge.svg)](https://codecov.io/gh/Vasu-710/siem-playground)
 
-**A lightweight, containerized Security Information and Event Management (SIEM) system for learning, testing, and demonstrating security event correlation and threat intelligence enrichment.**
+A small SIEM pipeline you can run on a laptop. Events go in over HTTP, get
+normalised and checked against detection rules, and alerts come out on a
+dashboard. Built to learn how the pieces of a SIEM fit together, not to
+replace one.
 
----
-
-## 🎯 What is SIEM Playground?
-
-SIEM Playground is a full-stack security demo project that simulates an enterprise SIEM environment. It allows you to:
-
-- **Ingest** security telemetry from various sources
-- **Normalize** logs into a common schema
-- **Correlate** events using custom detection rules
-- **Enrich** alerts with threat intelligence
-- **Visualize** security alerts in real-time via a React dashboard
-
-Perfect for security engineers, SOC analysts, students, and anyone interested in understanding how modern SIEM systems work.
-
----
-
-## 🎥 Demo Video
-
-**Coming Soon!**
-
-A full walkthrough video demonstrating:
-- Setting up the SIEM Playground
-- Ingesting security events
-- Viewing real-time alerts
-- Creating custom correlation rules
-
-Stay tuned! 🎬
-
----
-
-## ✨ Features
-
-- 🐳 **Fully Dockerized** - Spin up the entire stack with one command
-- 🔍 **Event Correlation** - Built-in rules to detect suspicious patterns
-- 🌐 **Threat Enrichment** - Automatic IOC (Indicator of Compromise) lookup
-- 📊 **Real-time Dashboard** - React UI to monitor alerts as they happen
-- 🧪 **Demo Data Included** - Replay phishing campaign scenarios
-- 🔧 **Extensible** - Easy to add custom rules and enrichment sources
-- 📈 **CI/CD Ready** - GitHub Actions for testing and coverage
-
----
-
-## 🏗️ Architecture
+## How it works
 
 ```
-┌─────────────┐      ┌──────────────┐      ┌─────────────┐
-│  Collector  │ ───> │   Pipeline   │ ───> │  Alerts DB  │
-│  (FastAPI)  │      │ (Correlator) │      │   (/tmp)    │
-└─────────────┘      └──────────────┘      └─────────────┘
-                             │                      │
-                             ↓                      ↓
-                     ┌──────────────┐      ┌─────────────┐
-                     │  Normalizer  │      │   React UI  │
-                     │  & Enricher  │      │ (Dashboard) │
-                     └──────────────┘      └─────────────┘
+  POST /ingest                  claim unprocessed rows
+       │                                  │
+       ▼                                  ▼
+┌──────────────┐   events    ┌─────────────────────────┐   alerts
+│  Collector   │ ──────────> │        Pipeline         │ ─────────┐
+│  (FastAPI)   │             │ normalise → rules →     │          │
+└──────────────┘             │ enrich → store          │          │
+       ▲                     └─────────────────────────┘          │
+       │                                  │                       │
+       │                                  ▼                       ▼
+       │                        ┌────────────────────────────────────┐
+       │                        │             PostgreSQL             │
+       │                        │        events  ·  alerts           │
+       │                        └────────────────────────────────────┘
+       │                                          │
+  GET /api/alerts  <──────────────────────────────┘
+       │
+       ▼
+┌──────────────┐
+│  React UI    │  polls every 3s
+└──────────────┘
 ```
 
-**Components:**
-- **Collector API** - FastAPI service that ingests events via REST endpoint
-- **Pipeline** - Python scripts for normalization, correlation, and enrichment
-- **PostgreSQL** - Database for persistent storage (future enhancement)
-- **React UI** - Frontend dashboard displaying alerts
-- **Replay Tool** - Simulate security events from JSON datasets
+The collector never decides anything. It writes events and reads alerts. All
+detection happens in the pipeline, which claims rows from the database rather
+than reading a file, so an event is handed to exactly one pass and is never
+dropped.
 
+## Quick start
 
----
+Needs Docker and Docker Compose.
 
-## 🚀 Quick Start
-
-### Prerequisites
-- Docker & Docker Compose
-- Git
-- Python 3.11+ (for running replay scripts)
-
-### Installation
-
-1. **Clone the repository:**
 ```bash
 git clone https://github.com/Vasu-710/siem-playground.git
 cd siem-playground
+docker compose up --build
 ```
 
-2. **Start the stack:**
+Then send the demo campaign through it:
+
 ```bash
-docker-compose up --build
+pip install requests
+python tools/replay_to_collector.py
 ```
 
-This will start:
-- PostgreSQL (port 5432)
-- Collector API (port 8000)
-- Pipeline (background processing)
-- React UI (port 3000)
+Open http://localhost:3000. The replay waits for the collector to be healthy
+before sending, and the pipeline polls once a second, so alerts show up within
+a few seconds.
 
-3. **Wait ~15 seconds** for all services to initialize
-
-4. **Access the UI:**
-Open your browser to [http://localhost:3000](http://localhost:3000)
-
-5. **Generate demo alerts:**
-```bash
-python3 tools/replay_to_collector.py
-```
-
-You should now see alerts appearing in the dashboard! 🎉
-
----
-
-## 📚 Usage
-
-### Ingesting Custom Events
-
-Send events to the collector API:
+Send your own event:
 
 ```bash
 curl -X POST http://localhost:8000/ingest \
   -H "Content-Type: application/json" \
-  -d '{
-    "timestamp": "2025-11-09T12:00:00Z",
-    "source": "firewall",
-    "event_type": "connection_blocked",
-    "payload": {
-      "ip": "192.168.1.100",
-      "port": 445,
-      "reason": "malicious_ip"
-    }
-  }'
+  -d '{"source":"firewall","event_type":"connection_blocked",
+       "payload":{"ip":"1.2.3.4","port":445}}'
 ```
 
-### Viewing Alerts
+| Endpoint | What it does |
+|---|---|
+| `POST /ingest` | Store one event. `timestamp` and `payload` are optional |
+| `GET /api/alerts?limit=100` | Most recent alerts first |
+| `GET /api/stats` | Event, pending and alert counts |
+| `GET /health` | Checks the database, not just the process |
 
-**Via UI:** [http://localhost:3000](http://localhost:3000)
+## The detection rules
 
-**Via API:**
-```bash
-curl http://localhost:8000/api/alerts
-```
+Both live in `siemlib/rules.py`.
 
-### Checking Health
+**Credential Submission** (severity 7) fires on a single `credential_submitted`
+event. Deduplicated per campaign and user.
 
-```bash
-curl http://localhost:8000/health
-```
+**Mass Clicks** (severity 5) fires when one campaign collects five or more
+`link_clicked` events inside the window. Deduplicated per campaign.
 
----
+Rules are plain functions over normalised events. They take no database
+connection and read no clock, which is why they can be tested against a fixed
+list. The caller decides what "recent" means and passes it in.
 
-## 🔧 Configuration
-
-### Adding Custom Correlation Rules
-
-Edit `pipeline/correlator.py` and add your rule function:
+To add one, write the function and add it to `PER_EVENT_RULES` or
+`WINDOWED_RULES`:
 
 ```python
-def rule_brute_force(recent_events):
-    failed_logins = [e for e in recent_events if e['type'] == 'auth_failed']
-    if len(failed_logins) >= 5:
-        return {
-            "name": "Brute Force Detected",
-            "severity": 8,
-            "evidence": failed_logins
-        }
-    return None
+def brute_force(events, threshold=5):
+    failures = [e for e in events if e["type"] == "auth_failed"]
+    if len(failures) < threshold:
+        return []
+    return [{
+        "name": "Brute Force",
+        "severity": 8,
+        "evidence": {"attempts": len(failures)},
+        "dedup_key": f"brute_force:{failures[-1]['user']}",
+        "enrich_from": failures[-1],
+    }]
 ```
 
-### Adding Threat Intelligence
+## Threat enrichment
 
-Update `pipeline/enricher.py`:
+`siemlib/enricher.py` holds a dict of indicators. Every alert gets its IP and
+domain looked up, and whatever matches is stored alongside it. An empty
+`enrichment` means nothing matched, which is not the same as nobody having
+looked. Swapping the dict for a real feed means replacing `lookup()` and
+nothing else.
 
-```python
-THREAT_DB = {
-    "evil.com": {"score": 95, "source": "custom-intel", "tags": ["malware"]},
-    "10.0.0.1": {"score": 80, "source": "internal-blacklist", "tags": ["c2"]}
-}
-```
+## Configuration
 
----
+| Variable | Default | Used by |
+|---|---|---|
+| `DATABASE_URL` | `postgresql://siem:siem_pass@db:5432/siemdb` | both |
+| `ALLOWED_ORIGINS` | `http://localhost:3000` | collector |
+| `BATCH_SIZE` | `100` | pipeline |
+| `WINDOW_SECONDS` | `300` | pipeline |
+| `DEDUP_SECONDS` | `300` | pipeline |
+| `POLL_SECONDS` | `1` | pipeline |
 
-## 🧪 Testing
+## Tests
 
-### Run Python Tests
 ```bash
-docker-compose run --rm pipeline pytest tests/
+pip install -r requirements-dev.txt
+pytest tests/
 ```
 
-### Run UI Tests
+The unit tests run anywhere. The database tests need a real Postgres and skip
+without one, because what they are testing is the SQL and a mock would only
+test the mock:
+
+```bash
+docker compose up -d db
+TEST_DATABASE_URL=postgresql://siem:siem_pass@localhost:5432/siemdb pytest tests/
+```
+
+UI:
+
 ```bash
 cd ui
-npm test
+npm ci
+npm run lint
+npm test -- --watchAll=false
 ```
 
-### Coverage Report
-```bash
-coverage run -m pytest tests/
-coverage report
-```
+CI runs all of it on every push, including a Postgres service container.
 
----
-
-## 📁 Project Structure
+## Layout
 
 ```
-siem-playground/
-├── collectors/
-│   └── api_collector/          # FastAPI ingestion service
-│       ├── app/
-│       │   └── main.py         # API endpoints
-│       └── requirements.txt
-├── pipeline/
-│   ├── correlator.py           # Event correlation engine
-│   ├── normalizer.py           # Log normalization
-│   ├── enricher.py             # Threat intel enrichment
-│   └── requirements.txt
-├── ui/
-│   ├── src/
-│   │   ├── App.js              # Main React component
-│   │   └── index.js            # React entry point
-│   ├── public/
-│   │   └── index.html
-│   └── package.json
-├── datasets/
-│   └── demo_campaign_replay.json  # Sample phishing events
-├── tools/
-│   └── replay_to_collector.py     # Event replay script
-├── infra/
-│   ├── Dockerfile.api
-│   └── Dockerfile.ui
-├── tests/
-│   └── test_parsers.py
-├── docker-compose.yml
-└── README.md
+siemlib/            shared by both services
+  normalizer.py     raw event  ->  canonical fields
+  rules.py          detection rules, pure functions
+  enricher.py       indicator lookup
+  db.py             all the SQL
+  schema.sql        tables and indexes
+collectors/api_collector/app/main.py    the HTTP API
+pipeline/correlator.py                  the loop
+ui/src/                                 React dashboard
+tests/                                  65 tests
+tools/replay_to_collector.py            send a dataset in
+datasets/                               demo phishing campaign
 ```
 
----
+## What it does not do
 
-## 🛠️ Development
+- **No authentication.** Anyone who can reach the collector can write events
+  and read every alert. Fine on a laptop, not fine anywhere else.
+- **Two rules.** Real SIEMs have hundreds.
+- **The threat data is a dict in a file.** No live feeds.
+- **One pipeline process.** `FOR UPDATE SKIP LOCKED` means a second one would
+  be safe, but nothing has been tested that way.
+- **Nothing is ever deleted.** Events and alerts accumulate until you drop the
+  volume.
+- **No alert routing.** Alerts land in the database and on the dashboard. They
+  do not go anywhere else.
 
-### Logs & Debugging
+## History
 
-**View all logs:**
-```bash
-docker-compose logs -f
-```
+This started as a learning project in November 2025 and was rewritten in
+October 2026. A few things were wrong with the first version and they are worth
+writing down.
 
-**View specific service:**
-```bash
-docker-compose logs -f collector
-docker-compose logs -f pipeline
-docker-compose logs -f ui
-```
+**The UI workflow checked nothing.** The steps were
+`npm run lint || echo "Lint warnings"` and `npm test || echo "Tests run"`.
+There was no `lint` script and there were no test files, so both commands
+failed every run, `|| echo` swallowed the failure, and the badge said passing.
+Ten green runs that never linted or tested a single line.
 
-**Access container shell:**
-```bash
-docker exec -it siem-playground-collector-1 bash
-```
+**The pipeline silently lost events.** Events were appended to a JSONL file in
+`/tmp`. Each pass read the whole file, processed it, then truncated it.
+Anything the collector appended between the read and the truncate was gone with
+no error and no trace. Events now live in Postgres and are claimed with
+`UPDATE ... WHERE id IN (SELECT ... FOR UPDATE SKIP LOCKED)`, so a row is
+handed to exactly one pass.
 
-**Check temp files:**
-```bash
-docker exec siem-playground-pipeline-1 cat /tmp/siem_events.jsonl
-docker exec siem-playground-pipeline-1 cat /tmp/siem_alerts.jsonl
-```
+**Postgres was started but never used.** Compose ran it, the README listed it
+under Quick Start and also called it a future enhancement, and no code imported
+a database driver. It is now the actual storage.
 
-### Rebuilding
+**The mass clicks rule had no window** despite a comment saying it did, only
+ever saw whatever arrived in the last second, returned on the first campaign it
+found, and its alerts were hardcoded to have no enrichment.
 
-```bash
-# Stop everything
-docker-compose down
+**The coverage badge measured one file.** Coverage ran with no `--source`, so
+it only counted modules the single test imported, and reported that as the
+project's number.
 
-# Remove volumes (fresh start)
-docker-compose down -v
+**CORS allowed all origins with credentials enabled**, a combination browsers
+reject outright.
 
-# Rebuild and start
-docker-compose up --build
-```
-
----
-
-## 🎓 Learning Resources
-
-This project demonstrates:
-- **Event-driven architecture** for security monitoring
-- **Log normalization** techniques
-- **Correlation rules** for threat detection
-- **Threat intelligence integration**
-- **Microservices** with Docker
-- **REST API design** with FastAPI
-- **Real-time dashboards** with React
-
----
-
-## 🚧 Roadmap
-
-- [ ] Add more correlation rules (brute force, lateral movement, etc.)
-- [ ] Integrate real threat intelligence APIs (VirusTotal, AbuseIPDB)
-- [ ] Persistent storage with PostgreSQL
-- [ ] Authentication & multi-tenancy
-- [ ] Export alerts to SIEM formats (CEF, LEEF)
-- [ ] Kibana-style query interface
-- [ ] Machine learning anomaly detection
-
----
-
-## 🤝 Contributing
-
-Contributions welcome! Please:
-1. Fork the repo
-2. Create a feature branch (`git checkout -b feature/awesome-rule`)
-3. Commit your changes (`git commit -am 'Add awesome correlation rule'`)
-4. Push to the branch (`git push origin feature/awesome-rule`)
-5. Open a Pull Request
-
----
-
-## 📝 License
-
-This project is open source and available under the MIT License.
-
----
-
-## 🙏 Acknowledgments
-
-Built for learning and demonstration purposes. Inspired by enterprise SIEM solutions like Splunk, ELK Stack, and QRadar.
-
----
-
-## 📧 Contact
-
-**Author:** Vasu Saini  
-**GitHub:** [@Vasu-710](https://github.com/Vasu-710)
-
----
-
-**⭐ If you find this project useful, please consider giving it a star!**
+The pattern in most of those is the same. Something reported success based on
+having run rather than on what it produced. That is worth more to me than the
+project is.

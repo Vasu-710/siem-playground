@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { getSeverityColor, getSeverityIcon, getSeverityLabel, getStats } from './severity';
 
 function App() {
   const [alerts, setAlerts] = useState([]);
@@ -32,38 +33,7 @@ function App() {
     return () => clearInterval(id);
   }, []);
 
-  const getSeverityColor = (severity) => {
-    if (severity >= 8) return '#ef4444'; // Red - Critical
-    if (severity >= 6) return '#f59e0b'; // Orange - High
-    if (severity >= 4) return '#eab308'; // Yellow - Medium
-    return '#10b981'; // Green - Low
-  };
-
-  const getSeverityLabel = (severity) => {
-    if (severity >= 8) return 'CRITICAL';
-    if (severity >= 6) return 'HIGH';
-    if (severity >= 4) return 'MEDIUM';
-    return 'LOW';
-  };
-
-  const getSeverityIcon = (severity) => {
-    if (severity >= 8) return '🚨';
-    if (severity >= 6) return '⚠️';
-    if (severity >= 4) return '⚡';
-    return '✅';
-  };
-
-  const getStats = () => {
-    return {
-      total: alerts.length,
-      critical: alerts.filter(a => a.severity >= 8).length,
-      high: alerts.filter(a => a.severity >= 6 && a.severity < 8).length,
-      medium: alerts.filter(a => a.severity >= 4 && a.severity < 6).length,
-      low: alerts.filter(a => a.severity < 4).length,
-    };
-  };
-
-  const stats = getStats();
+  const stats = getStats(alerts);
 
   return (
     <div style={{
@@ -240,7 +210,7 @@ function App() {
               </div>
             </div>
 
-            {alert.enriched && Object.keys(alert.enriched).length > 0 && (
+            {alert.enrichment && Object.keys(alert.enrichment).length > 0 && (
               <div style={{
                 background: '#f9fafb',
                 borderRadius: '12px',
@@ -259,7 +229,7 @@ function App() {
                   fontFamily: "'Fira Code', 'Courier New', monospace",
                   lineHeight: '1.6'
                 }}>
-                  {JSON.stringify(alert.enriched, null, 2)}
+                  {JSON.stringify(alert.enrichment, null, 2)}
                 </pre>
               </div>
             )}

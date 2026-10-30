@@ -54,7 +54,8 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-package-lock.json
+# package-lock.json is committed on purpose: CI runs `npm ci`,
+# which needs the lockfile and installs exactly what is in it.
 yarn.lock
 .pnp/
 .pnp.js
@@ -99,3 +100,9 @@ coverage/
 # SIEM specific
 /tmp/siem_events.jsonl
 /tmp/siem_alerts.jsonl
+# Editors
+.idea/
+.vscode/
+
+# macOS
+.DS_Store

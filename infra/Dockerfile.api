@@ -1,6 +1,10 @@
 FROM python:3.11-slim
 WORKDIR /app
-COPY collectors/api_collector/requirements.txt .
+
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY collectors/api_collector .
+
+COPY siemlib ./siemlib
+COPY collectors/api_collector/app ./app
+
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,7 +1,6 @@
-version: "3.8"
 services:
   db:
-    image: postgres:15
+    image: postgres:16
     environment:
       POSTGRES_USER: siem
       POSTGRES_PASSWORD: siem_pass
@@ -9,40 +8,45 @@ services:
     ports: ["5432:5432"]
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U siem -d siemdb"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
 
   collector:
     build:
       context: .
       dockerfile: infra/Dockerfile.api
     ports: ["8000:8000"]
-    depends_on:
-      - db
     environment:
-      DATABASE_URL: postgres://siem:siem_pass@db:5432/siemdb
-    volumes:
-      - /tmp:/tmp
+      DATABASE_URL: postgresql://siem:siem_pass@db:5432/siemdb
+      ALLOWED_ORIGINS: http://localhost:3000
+    depends_on:
+      db:
+        condition: service_healthy
 
   pipeline:
-    image: python:3.11-slim
-    working_dir: /app
-    volumes:
-      - ./pipeline:/app
-      - /tmp:/tmp
-    command: ["bash", "-c", "pip install -r requirements.txt && python correlator.py"]
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.pipeline
+    environment:
+      DATABASE_URL: postgresql://siem:siem_pass@db:5432/siemdb
+      WINDOW_SECONDS: "300"
+      DEDUP_SECONDS: "300"
     depends_on:
-      - collector
-      - db
+      db:
+        condition: service_healthy
 
   ui:
     build:
       context: .
       dockerfile: infra/Dockerfile.ui
-    ports:
-      - "3000:3000"
+    ports: ["3000:3000"]
+    environment:
+      REACT_APP_API_URL: http://localhost:8000
     depends_on:
       - collector
-    environment:
-      - REACT_APP_API_URL=http://localhost:8000
 
 volumes:
   pgdata:

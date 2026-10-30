@@ -1,59 +1,107 @@
-import time, json, os
-from normalizer import normalize
-from enricher import enrich
+"""The pipeline loop.
 
-QUEUE_FILE = "/tmp/siem_events.jsonl"
-ALERTS_FILE = "/tmp/siem_alerts.jsonl"
+Claims events from Postgres, runs the rules over them, writes alerts back.
+Runs until stopped. Every number it uses is an environment variable so the
+behaviour can be changed without editing the file.
+"""
 
-# simple rules: list of functions that return alert dict or None
-def rule_credential_submission(evt):
-    if evt['type'] == 'credential_submitted':
-        return {"name": "Credential Submission", "severity": 7, "evidence": evt}
-    return None
+import logging
+import os
+import signal
+import sys
+import time
 
-def rule_mass_clicks(recent_events):
-    # naive: if >5 link_clicked from same campaign within window -> suspicious
-    counts = {}
-    for e in recent_events:
-        if e['type'] == 'link_clicked':
-            camp = e['payload'].get('campaign_id')
-            counts[camp] = counts.get(camp, 0) + 1
-            if counts[camp] >= 5:
-                return {"name": "Mass Clicks", "severity": 5, "evidence": {"campaign": camp}}
-    return None
+from siemlib import db, enricher, rules
+from siemlib.normalizer import normalize
 
-def read_queue():
-    if not os.path.exists(QUEUE_FILE):
-        return []
-    with open(QUEUE_FILE) as f:
-        lines = [json.loads(l) for l in f if l.strip()]
-    return lines
+BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "100"))
+WINDOW_SECONDS = int(os.environ.get("WINDOW_SECONDS", "300"))
+DEDUP_SECONDS = int(os.environ.get("DEDUP_SECONDS", "300"))
+POLL_SECONDS = float(os.environ.get("POLL_SECONDS", "1"))
 
-def main_loop():
-    processed = 0
-    while True:
-        raw = read_queue()
-        if not raw:
-            time.sleep(1)
-            continue
-        events = [normalize(r) for r in raw]
-        # run per-event rules
-        for e in events:
-            a = rule_credential_submission(e)
-            if a:
-                a['enriched'] = enrich(a['evidence'])
-                with open(ALERTS_FILE, "a") as f:
-                    f.write(json.dumps(a) + "\n")
-        # run windowed rule
-        a2 = rule_mass_clicks(events[-50:])
-        if a2:
-            a2['enriched'] = {}
-            with open(ALERTS_FILE, "a") as f:
-                f.write(json.dumps(a2) + "\n")
-        # simple rotation: clear queue after processing (for demo)
-        open(QUEUE_FILE, "w").close()
-        processed += 1
-        time.sleep(1)
+log = logging.getLogger("correlator")
+
+_running = True
+
+
+def _stop(signum, frame):
+    global _running
+    _running = False
+    log.info("signal %s received, finishing current pass", signum)
+
+
+def emit(conn, alert):
+    """Store one alert unless the same condition already fired recently.
+
+    Returns True if it was written, False if it was suppressed.
+    """
+    if db.alert_recently_seen(conn, alert["dedup_key"], DEDUP_SECONDS):
+        return False
+
+    enrichment = enricher.enrich(alert["enrich_from"])
+    db.insert_alert(
+        conn,
+        alert["name"],
+        alert["severity"],
+        alert["evidence"],
+        enrichment,
+        alert["dedup_key"],
+    )
+    log.info("alert: %s (severity %s)", alert["name"], alert["severity"])
+    return True
+
+
+def process_once(conn):
+    """One pass. Returns how many alerts were written."""
+    claimed = db.claim_events(conn, BATCH_SIZE)
+    written = 0
+
+    for row in claimed:
+        event = normalize(row)
+        for rule in rules.PER_EVENT_RULES:
+            alert = rule(event)
+            if alert and emit(conn, alert):
+                written += 1
+
+    if claimed:
+        log.info("claimed %s event(s)", len(claimed))
+        window = [normalize(row) for row in db.events_in_window(conn, WINDOW_SECONDS)]
+        for rule in rules.WINDOWED_RULES:
+            for alert in rule(window):
+                if emit(conn, alert):
+                    written += 1
+
+    return written
+
+
+def main():
+    logging.basicConfig(
+        level=os.environ.get("LOG_LEVEL", "INFO"),
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        stream=sys.stdout,
+    )
+    signal.signal(signal.SIGTERM, _stop)
+    signal.signal(signal.SIGINT, _stop)
+
+    conn = db.connect()
+    db.init_schema(conn)
+    log.info(
+        "correlator up: batch=%s window=%ss dedup=%ss poll=%ss",
+        BATCH_SIZE, WINDOW_SECONDS, DEDUP_SECONDS, POLL_SECONDS,
+    )
+
+    while _running:
+        try:
+            if process_once(conn) == 0:
+                time.sleep(POLL_SECONDS)
+        except Exception:
+            # One bad pass should not kill the pipeline, but it must be visible.
+            log.exception("pass failed, retrying")
+            time.sleep(POLL_SECONDS)
+
+    conn.close()
+    log.info("correlator stopped")
+
 
 if __name__ == "__main__":
-    main_loop()
+    main()
