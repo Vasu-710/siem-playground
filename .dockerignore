@@ -1,0 +1,17 @@
+# Keep build contexts small and keep host artefacts out of the images.
+.git
+.github
+docs
+tests
+
+# node_modules built on a Mac would otherwise be copied into a Linux image and
+# shadow what `npm ci` installed, with binaries for the wrong platform.
+**/node_modules
+ui/build
+
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+.coverage
+coverage.xml
+.DS_Store

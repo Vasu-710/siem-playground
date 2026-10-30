@@ -126,6 +126,7 @@ nothing else.
 | `WINDOW_SECONDS` | `300` | pipeline |
 | `DEDUP_SECONDS` | `300` | pipeline |
 | `POLL_SECONDS` | `1` | pipeline |
+| `LOG_LEVEL` | `INFO` | pipeline |
 
 ## Tests
 

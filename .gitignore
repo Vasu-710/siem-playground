@@ -69,7 +69,6 @@ build/
 *.env
 .env.docker
 docker-compose.override.yml
-.dockerignore
 tmp/
 logs/
 *.log
