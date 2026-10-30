@@ -5,36 +5,55 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: [3.11]
+
+    # The database tests run against a real Postgres, because the thing being
+    # tested is the SQL. Mocking it would only test the mock.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: siem
+          POSTGRES_PASSWORD: siem_pass
+          POSTGRES_DB: siemdb
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U siem -d siemdb"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      TEST_DATABASE_URL: postgresql://siem:siem_pass@localhost:5432/siemdb
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: '3.11'
+          cache: pip
 
       - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-          pip install pytest coverage
+        run: pip install -r requirements-dev.txt
 
-      - name: Run tests with coverage
+      - name: Run tests
+        run: coverage run --source=siemlib,pipeline,collectors -m pytest tests/ -v
+
+      - name: Coverage report
         run: |
-          coverage run -m pytest tests/
+          coverage report -m
           coverage xml
-          coverage report
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage.xml
-          fail_ci_if_error: true
+          # A failed upload is a problem with Codecov, not with the code. It
+          # should not turn the build red and claim the tests broke.
+          fail_ci_if_error: false
